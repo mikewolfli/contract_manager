@@ -10,12 +10,12 @@ from tkinter import ttk
 #from threading import Thread as thread
 from tkinter import messagebox
 from tkinter import scrolledtext
-import Pmw
 from pg_dataset import *
 #from peewee import *
 import time
 import logging 
 import datetime
+from tkinter import simpledialog
 
 s_note="Tab切换查询/借阅状态"    
 class TextHandler(logging.Handler):
@@ -68,13 +68,8 @@ class Application(Frame):
         self.run_counter()
         self.bind_all("<Key>", self.OnKeyboardEvent)
         self.bind_all("<Tab>", self.switch_func)
-        self.bind_all("<F3>", self.pop_input_dlg)
+        self.bind_all("<F3>", self.getid)
         pg_db.connect()
-        
-    def pop_input_dlg(self,event):
-        self.id_input_status=True
-        if self.br_state:
-            self.pid_dialog.activate()
         
     def reset_status(self):
         self.s_user=''
@@ -101,39 +96,39 @@ class Application(Frame):
         self.timer_label["text"]=str(self.num_counter)
         self.timer_label.after(1000, self.run_counter)
         
-    def getid(self, result):
-        if result is None or result=='Cancel':
-            self.pid_dialog.deactivate(result)
-            self.id_input_status=False
-        else:
-            pid = self.pid_dialog.get()
-
-            try:
-                card_id=EmployeeCardInfo.get((EmployeeCardInfo.employee==pid)&(EmployeeCardInfo.is_active==True)).card
-                self.card_id.set(card_id)
-            except EmployeeCardInfo.DoesNotExist:
-                self.card_id.set('None')
-                #messagebox.showwarning("提示", "数据库中没有阁下的ID card的记录，请通知管理员添加") 
-                
-            try:                
-                employee_line= Employee.get(Employee.employee==pid)
-                self.num_counter=30
-                self.c_status=True
-            except Employee.DoesNotExist:
-                self.c_status=False
-                self.card_id.set("")
-                self.employee_info.set("")
-                self.s_user=""
-                messagebox.showerror("错误", "数据库中无阁下相关信息，请通知管理员增加人员信息")
-                return
-            
-            self.pid_dialog.deactivate()
-            self.id_input_status=False            
-                
-            self.s_user=employee_line.employee+"-"+employee_line.name
-            self.employee_info.set(self.s_user)            
+    def  getid(self, event):
+        if not self.br_state:
+            return
         
+        self.id_input_status=True
+        pid = simpledialog.askstring('员工编号','请输入8位ID')
+        if pid is None or len(pid)==0:
+            return
+
+        try:
+            card_id=EmployeeCardInfo.get((EmployeeCardInfo.employee==pid)&(EmployeeCardInfo.is_active==True)).card
+            self.card_id.set(card_id)
+        except EmployeeCardInfo.DoesNotExist:
+            self.card_id.set('None')
+            #messagebox.showwarning("提示", "数据库中没有阁下的ID card的记录，请通知管理员添加") 
+                
+        try:                
+            employee_line= Employee.get(Employee.employee==pid)
+            self.num_counter=30
+            self.c_status=True
+        except Employee.DoesNotExist:
+            self.c_status=False
+            self.card_id.set("")
+            self.employee_info.set("")
+            self.s_user=""
+            messagebox.showerror("错误", "数据库中无阁下相关信息，请通知管理员增加人员信息")
+            return
+            
+        self.id_input_status=False            
     
+        self.s_user=employee_line.employee+"-"+employee_line.name
+        self.employee_info.set(self.s_user)            
+          
     def get_employee_info(self, card_id):
         try:            
             employee_id = EmployeeCardInfo.get((EmployeeCardInfo.card == card_id) & (EmployeeCardInfo.is_active==True))
@@ -284,8 +279,8 @@ class Application(Frame):
         
 
         result_list = ProjectInfo.select(ProjectInfo, ContractBookHeader).join(ContractBookHeader,on=(ProjectInfo.project==ContractBookHeader.project))\
-                                          .where(((ProjectInfo.project.contains(s_case)) | (ProjectInfo.contract.contains(s_case)))&\
-                                                 (ContractBookHeader.status>=0)&(ContractBookHeader.status<=2))\
+                                          .where((ProjectInfo.project.contains(s_case) | ProjectInfo.contract.contains(s_case))&\
+                                                 (ContractBookHeader.status>=0))\
                                           .order_by(ProjectInfo.project.asc(), ContractBookHeader.item_no.asc()).naive()
                                           
         #print(result_list.sql())
@@ -297,13 +292,16 @@ class Application(Frame):
         for r in result_list:     
             i+=1
             row=[str(i),r.contract_doc,r.contract,r.item_no,r.project_name,r.project,'','','','','','']
-            if r.status<2:
+            if r.status==0 or r.status==1:
                 row[6]="在架"
                 row[7]="资料室"
             elif r.status==2:
                 row[6]= "借出"
+            elif r.status==3:
+                row[6]= "归档"
+                row[7]= "档案袋"
             
-            if r.status<2:
+            if r.status !=2 :
                 parent_node=self.contract_br_list.insert('', i-1, values=row)
             else:
                 b=ContractBrLog.get((ContractBrLog.contract_doc==r.contract_doc)&(ContractBrLog.br_status==True))
@@ -463,14 +461,6 @@ class Application(Frame):
         self.contract_br_list.configure(xscrollcommand=self.x_br_scroll.set)
         self.x_br_scroll.grid(row=10,column=0, columnspan=6,sticky=NSEW) 
         
-        self.pid_dialog = Pmw.PromptDialog(self,
-                                           title = "请输入8位ID",
-                                           label_text='8-ID',
-                                           entryfield_labelpos='e',
-                                           defaultbutton=0,
-                                           buttons=('OK','Cancel'),
-                                           command = self.getid)
-        self.pid_dialog.withdraw()
         
         self.log_text=scrolledtext.ScrolledText(self, state='disabled')
         self.log_text.config(font=('TkFixedFont', 10, 'normal'))
